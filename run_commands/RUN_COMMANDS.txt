@@ -1,0 +1,28 @@
+INFERENCE TOOLS — RUN COMMANDS
+Run every command from the repo root, using the project venv (./venv/bin/python).
+Each tool has two commands: TEST (pytest suite) and MAIN (example runner script).
+
+NOTE: only the Demand Predictor model file is present locally. The other four
+models under Models/ are git-LFS pointers (4 KB stubs); their TEST and MAIN
+commands will fail on model load until the real files are fetched (git lfs pull).
+
+
+1) DEMAND PREDICTOR            [works now]
+   TEST:  ./venv/bin/python -m pytest tests/test_demand_predictor_tool.py -v
+   MAIN:  ./venv/bin/python run_demand_predictor_example.py
+
+2) RISK DETECTOR              [needs model file — LFS]
+   TEST:  ./venv/bin/python -m pytest tests/test_risk_detector_tool.py -v
+   MAIN:  ./venv/bin/python run_risk_detector_example.py
+
+3) INVENTORY REBALANCER       [needs model file — LFS]
+   TEST:  ./venv/bin/python -m pytest tests/test_inventory_rebalancer_tool.py -v
+   MAIN:  ./venv/bin/python run_rebalancer_example.py
+
+4) FORECAST OPTIMIZER         [needs model file — LFS]
+   TEST:  ./venv/bin/python -m pytest tests/test_forecast_optimizer_tool.py -v
+   MAIN:  ./venv/bin/python run_forecast_optimizer_example.py
+
+5) SUPPLIER AUDITOR           [needs model file — LFS]
+   TEST:  ./venv/bin/python -m pytest tests/test_supplier_auditor_tool.py -v
+   MAIN:  ./venv/bin/python run_supplier_auditor_example.py

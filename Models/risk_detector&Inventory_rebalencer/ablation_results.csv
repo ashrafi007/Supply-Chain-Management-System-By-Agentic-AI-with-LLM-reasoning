@@ -1,0 +1,6 @@
+Configuration,Weights,Spearman ρ with full,Δρ from full
+Full model (all 4 signals),"{'gap': 0.4, 'bo': 0.35, 'dep': 0.15, 'urg': 0.1}",1.0000,-0.0000
+Without gap_score (40%),"{'gap': 0.0, 'bo': 0.35, 'dep': 0.15, 'urg': 0.1}",0.9913,-0.0087
+Without bo_score (35%),"{'gap': 0.4, 'bo': 0.0, 'dep': 0.15, 'urg': 0.1}",0.5143,-0.4857
+Without dep_score (15%),"{'gap': 0.4, 'bo': 0.35, 'dep': 0.0, 'urg': 0.1}",0.7717,-0.2283
+Without urg_score (10%),"{'gap': 0.4, 'bo': 0.35, 'dep': 0.15, 'urg': 0.0}",0.9998,-0.0002

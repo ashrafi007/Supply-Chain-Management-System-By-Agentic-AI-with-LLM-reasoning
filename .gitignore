@@ -1,0 +1,16 @@
+venv/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+.pytest_cache/
+.ipynb_checkpoints/
+Database/Processed_Dataset.pkl
+Models/**/*.pkl
+Models/**/*.joblib
+Dataset/*.csv
+
+# Generated runtime database — regenerable from src/db/create_db.py
+data/app.db
+data/app.db-wal
+data/app.db-shm

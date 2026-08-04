@@ -1,0 +1,24 @@
+{
+  "_note": "Documentation/audit registry of pinned artifact paths, relative to repo root. MANIFEST_VERSION is derived from these files' on-disk (size, mtime) by manifest.py at import time. Deliberately NOT placed under a top-level models/ directory: this repo's Models/ (capital M) already exists for binary artifacts, and on case-insensitive filesystems (macOS default) models/ and Models/ collide onto the same directory -- co-locating this file with manifest.py avoids that trap entirely. Agent 5's Task-A model file is dynamically selected inside load_forecast_optimizer_artifacts() via agent3_thresholds.pkl['selected_model_a'] and is intentionally not enumerated here by exact filename -- validated transitively by calling that loader at manifest-import time instead.",
+  "agent_1_demand_predictor": [
+    "Models/Demand_Predictor/agent1_h6_model.joblib"
+  ],
+  "agent_2_risk_detector": [
+    "Models/risk_detector&Inventory_rebalencer/stacking_proposed.pkl",
+    "Models/risk_detector&Inventory_rebalencer/feature_columns.pkl",
+    "Models/risk_detector&Inventory_rebalencer/optimal_threshold.pkl"
+  ],
+  "agent_3_rebalancer": [
+    "Models/risk_detector&Inventory_rebalencer/rebalancer_xgboost.pkl",
+    "Models/risk_detector&Inventory_rebalencer/rebalancer_feature_columns.pkl",
+    "Models/risk_detector&Inventory_rebalencer/rebalancer_imputer.pkl"
+  ],
+  "agent_5_forecast_optimizer": [
+    "Models/forecast/agent3_corrector_xgb.pkl",
+    "Models/forecast/agent3_feature_cols.pkl",
+    "Models/forecast/agent3_thresholds.pkl"
+  ],
+  "agent_6_supplier_auditor": [
+    "Models/supply_auditor/supplier_auditor_model.pkl"
+  ]
+}

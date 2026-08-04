@@ -1,0 +1,107 @@
+==============================================================================
+ ORCHESTRATOR RUN COMMANDS — LangGraph Agent Linking
+ Run every command from the repo root, using the project venv (./venv/bin/python).
+ Spec: .CLAUDE/orchestrator_spec.md   Plan: read-claude-orchestrator-spec-md-and-do-playful-spark.md
+==============================================================================
+
+cd /Users/home/Documents/Projects/Updated-Supply-Chain-Agentic_AI
+
+------------------------------------------------------------------------------
+ 0) ONE-TIME SETUP (already done in this repo, listed for reference)
+------------------------------------------------------------------------------
+  git init
+  ./venv/bin/pip install langgraph
+  # already added to requirements.txt: langgraph>=1.2,<2.0
+
+------------------------------------------------------------------------------
+ 1) VALIDATE THE MANIFEST  (fails loudly if any model artifact is missing)
+------------------------------------------------------------------------------
+  ./venv/bin/python -m src.orchestrator.manifest
+
+  - Prints MANIFEST_VERSION (a sha256 fingerprint over every artifact's
+    path/size/mtime) and every resolved path for all 5 agents.
+  - Also warms + validates each artifact via its own tool's loader, so a
+    malformed (not just missing) artifact fails here too, before any node runs.
+
+------------------------------------------------------------------------------
+ 2) GRAPH TOPOLOGY  (pure logic + graph shape, no DB)
+------------------------------------------------------------------------------
+  ./venv/bin/python -m pytest tests/orchestrator/test_graph_topology.py -v
+
+  - Asserts should_suppress() is unit-testable standalone (zero LangGraph/DB).
+  - Asserts exactly 5 agent nodes + START/END, linear, no "routing" node
+    anywhere (Agent 4 is permanently cancelled).
+
+------------------------------------------------------------------------------
+ 3) SUPPRESSION TEST  (the core novelty proof, in isolation)
+------------------------------------------------------------------------------
+  ./venv/bin/python -m pytest tests/orchestrator/test_suppression.py -v
+
+  - Node-level: agent_5_forecast_opt.node() with alarm_triggered=1 short-
+    circuits to correction_factor=1.0 without touching the real model.
+  - Full-graph: alarm_triggered=1 flows through the compiled graph to a
+    forecast_optimizer AgentEvent with status="skipped" and a note
+    containing "suppressed".
+
+------------------------------------------------------------------------------
+ 4) EXECUTOR CONTRACT TEST  (PipelineResult / AgentEvent shape)
+------------------------------------------------------------------------------
+  ./venv/bin/python -m pytest tests/orchestrator/test_executor_contract.py -v
+
+  - LangGraphExecutor().invoke(state) returns exactly {final_state,
+    agent_events, manifest_version}; agent_events has exactly 5 entries,
+    sequence 1..5, agent_name values matching stub_executor's _AGENT_NAMES.
+
+------------------------------------------------------------------------------
+ 5) FULL ORCHESTRATOR SUITE
+------------------------------------------------------------------------------
+  ./venv/bin/python -m pytest tests/orchestrator/ -v
+
+------------------------------------------------------------------------------
+ 6) END-TO-END, REAL SEEDED DB  (real executor + repository layer, full stack)
+------------------------------------------------------------------------------
+  ./venv/bin/python -m pytest tests/orchestrator/test_end_to_end.py -v
+
+  - Runs a real known_sku_id through run_pipeline_for_sku() with the real
+    LangGraphExecutor against the real seeded data/app.db.
+  - Asserts pipeline_runs.status == "success", one predictions row, 5
+    agent_traces rows in sequence order, and route/replenishment_qty/
+    recommendation staying NULL by design (Agent 4 cancelled; recommendation
+    reserved for a future LLM node).
+
+------------------------------------------------------------------------------
+ 7) SINGLE-SKU DEMO  (pretty-prints pipeline_runs / predictions / agent_traces)
+------------------------------------------------------------------------------
+  ./venv/bin/python -m scripts.run_single_prediction --sku-id <SKU_ID>
+
+  Known-good SKUs from this repo's seeded data/app.db (verified working):
+    normal SKU (alarm_triggered=0):   ./venv/bin/python -m scripts.run_single_prediction --sku-id 1111949
+    alarm-positive SKU (the proof):   ./venv/bin/python -m scripts.run_single_prediction --sku-id 1113111
+
+  Expect for the alarm-positive SKU:
+    predictions.alarm_triggered   = 1
+    predictions.correction_factor = 1.0
+    agent_traces row [4] forecast_optimizer: status=skipped,
+      note='suppressed: alarm_triggered=1'
+
+------------------------------------------------------------------------------
+ 8) WHOLE REPO  (run right before showing anyone anything)
+------------------------------------------------------------------------------
+  ./venv/bin/python -m pytest -v
+
+==============================================================================
+ QUICK REFERENCE (copy/paste, in order)
+==============================================================================
+  cd /Users/home/Documents/Projects/Updated-Supply-Chain-Agentic_AI
+  ./venv/bin/python -m src.orchestrator.manifest
+  ./venv/bin/python -m pytest tests/orchestrator/ -v
+  ./venv/bin/python -m scripts.run_single_prediction --sku-id 1113111
+  ./venv/bin/python -m pytest -v
+==============================================================================
+
+==============================================================================
+ SEE ALSO
+==============================================================================
+ run_commands/database_run.txt      - full database build/rebuild/inspect guide
+ run_commands/RUN_COMMANDS.txt      - per-tool TEST + MAIN example-runner commands
+ run_commands/VERIFICATION_COMMANDS.txt - schema + data-quality + tool-suite checks

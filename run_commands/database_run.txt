@@ -1,0 +1,250 @@
+==============================================================================
+ DATABASE RUN GUIDE — Agentic Supply Chain Management System
+ SQLite + SQLAlchemy 2.0  |  DB file: data/app.db
+ Spec: .CLAUDE/database_spec.md
+==============================================================================
+
+HOW MANY TABLES?  ->  7 tables
+
+  1. suppliers            (5 columns)   - seed data
+  2. skus                 (4 columns)   - seed data
+  3. inventory_current    (25 columns)  - seed data / updates  (4 fixed + 21 raw)
+  4. pipeline_runs        (8 columns)   - written by pipeline
+  5. predictions          (12 columns)  - written by pipeline
+  6. agent_traces         (9 columns)   - written by pipeline
+  7. forecast_actuals     (7 columns)   - written later
+
+------------------------------------------------------------------------------
+ WHERE EVERYTHING LIVES (file names)
+------------------------------------------------------------------------------
+  src/db/base.py        Engine, SessionLocal, Base, SQLite PRAGMAs (FK + WAL)
+  src/db/columns.py     Derives inventory_current columns from the raw CSV
+  src/db/models.py      All 7 table definitions (SQLAlchemy models)
+  src/db/create_db.py   Command to CREATE the database
+  src/db/verify_db.py   Command to VERIFY the schema is correct
+  data/app.db           The generated SQLite database file (gitignored)
+  Dataset/RSM_Dataset.csv   Raw source CSV the columns are derived from
+  venv/                 Virtual environment (SQLAlchemy 2.0.51 installed here)
+
+==============================================================================
+ COMMANDS
+==============================================================================
+ NOTE: run all commands from the project root:
+   cd /Users/home/Documents/Projects/Updated-Supply-Chain-Agentic_AI
+ All commands use the venv Python: ./venv/bin/python
+
+------------------------------------------------------------------------------
+ 0) ONE-TIME SETUP (only needed once)
+------------------------------------------------------------------------------
+  python3 -m venv venv
+  ./venv/bin/python -m pip install "sqlalchemy>=2.0"
+  # or: ./venv/bin/python -m pip install -r requirements.txt
+
+------------------------------------------------------------------------------
+ 1) CREATE the database  (builds data/app.db with all 7 tables)
+------------------------------------------------------------------------------
+  ./venv/bin/python -m src.db.create_db
+
+  - Prints every table with its column count.
+  - Prints the derived inventory_current column list (raw / excluded-*).
+  - If data/app.db already exists, it REFUSES and exits 1 (use --force to replace).
+
+------------------------------------------------------------------------------
+ 2) VERIFY the schema  (proves the constraints are enforced)
+------------------------------------------------------------------------------
+  ./venv/bin/python -m src.db.verify_db
+
+  - Runs 8 checks. Prints "SCHEMA OK" and exits 0 on success.
+
+------------------------------------------------------------------------------
+ 3) DROP + RE-CREATE  (rebuild from scratch)
+------------------------------------------------------------------------------
+  ./venv/bin/python -m src.db.create_db --force
+
+  - Drops all 7 tables and recreates them. Use after editing models.py.
+
+------------------------------------------------------------------------------
+ 4) DROP everything (delete the whole database file)
+------------------------------------------------------------------------------
+  rm -f data/app.db data/app.db-wal data/app.db-shm
+
+  - Fully removes the database. Re-run command (1) to rebuild it.
+  - To drop tables WITHOUT deleting the file:
+      ./venv/bin/python -c "from src.db.base import engine, Base; import src.db.models; Base.metadata.drop_all(engine); print('dropped')"
+
+------------------------------------------------------------------------------
+ 5) UPDATE the SCHEMA (change a table's columns)
+------------------------------------------------------------------------------
+  There are NO migrations (by design - spec uses create_all()).
+  To change the schema:
+    a) Edit the table in   src/db/models.py
+       (or change the raw CSV / classification logic in src/db/columns.py
+        to change inventory_current's columns)
+    b) Rebuild:
+       ./venv/bin/python -m src.db.create_db --force
+    c) Re-verify:
+       ./venv/bin/python -m src.db.verify_db
+
+  WARNING: --force DROPS existing data. This is a schema-only project (no data
+  loaded yet), so that is safe now. Once real data exists, a migration tool
+  (Alembic) would be needed instead.
+
+------------------------------------------------------------------------------
+ 6) UPDATE DATA (insert / update / delete rows)  - Python, via a session
+------------------------------------------------------------------------------
+  Foreign keys are enforced, so insert parents before children
+  (supplier -> sku -> inventory_current / pipeline_runs -> predictions).
+
+  ./venv/bin/python
+  >>> from src.db.base import SessionLocal
+  >>> from src.db.models import Supplier, Sku, InventoryCurrent
+  >>> with SessionLocal() as s:
+  ...     # INSERT
+  ...     s.add(Supplier(supplier_id="SUP-1", name="Acme"));           s.flush()
+  ...     s.add(Sku(sku_id="SKU-1", supplier_id="SUP-1"));             s.flush()
+  ...     s.add(InventoryCurrent(sku_id="SKU-1", national_inv=42.0));  s.flush()
+  ...     # UPDATE a row
+  ...     row = s.get(InventoryCurrent, "SKU-1")
+  ...     row.national_inv = 99.0
+  ...     # DELETE a row
+  ...     # s.delete(row)
+  ...     s.commit()          # <-- persists; without commit, changes roll back
+
+------------------------------------------------------------------------------
+ 7) INSPECT the database quickly
+------------------------------------------------------------------------------
+  # list tables + columns
+  ./venv/bin/python -c "from sqlalchemy import inspect; from src.db.base import engine; import src.db.models; i=inspect(engine); [print(t, [c['name'] for c in i.get_columns(t)]) for t in i.get_table_names()]"
+
+  # if the sqlite3 CLI is installed:
+  sqlite3 data/app.db ".tables"
+  sqlite3 data/app.db ".schema predictions"
+
+==============================================================================
+ TABLE DETAILS (defined in src/db/models.py)
+==============================================================================
+
+------------------------------------------------------------------------------
+ 1) suppliers                                     [class Supplier]
+------------------------------------------------------------------------------
+  supplier_id          TEXT      PRIMARY KEY
+  name                 TEXT      NOT NULL
+  country              TEXT      NULL
+  lead_time_avg_days   REAL      NULL
+  created_at           DATETIME  NOT NULL (UTC now)
+
+------------------------------------------------------------------------------
+ 2) skus                                          [class Sku]
+------------------------------------------------------------------------------
+  sku_id               TEXT      PRIMARY KEY
+  supplier_id          TEXT      NULL, FK -> suppliers.supplier_id
+  description          TEXT      NULL
+  created_at           DATETIME  NOT NULL (UTC now)
+  INDEX: idx_skus_supplier (supplier_id)
+
+------------------------------------------------------------------------------
+ 3) inventory_current  (one row per SKU)          [class InventoryCurrent]
+     Columns DERIVED from Dataset/RSM_Dataset.csv by src/db/columns.py
+------------------------------------------------------------------------------
+  FIXED (4):
+    sku_id             TEXT      PRIMARY KEY, FK -> skus.sku_id
+    snapshot_at        DATETIME  NOT NULL (UTC now)
+    raw_extra          JSON      NULL  (escape hatch for untyped columns)
+    updated_at         DATETIME  NOT NULL (UTC now, auto-updates)
+
+  RAW FEATURE COLUMNS (21), all nullable:
+    REAL (15):  national_inv, lead_time, in_transit_qty, forecast_3_month,
+                forecast_6_month, forecast_9_month, sales_1_month, sales_3_month,
+                sales_6_month, sales_9_month, min_bank, pieces_past_due,
+                perf_6_month_avg, perf_12_month_avg, local_bo_qty
+    INTEGER (6): potential_issue, deck_risk, oe_constraint, ppap_risk,
+                stop_auto_buy, rev_stop     (Yes/No flags stored as 0/1)
+
+  EXCLUDED (not stored):
+    went_on_backorder    -> excluded-target (the label; leakage guard)
+    inv_velocity, safety_gap, sales_trend, perf_gap, coverage_ratio, ...
+                         -> excluded-engineered (computed at serve time)
+  INDEX: idx_inventory_snapshot (snapshot_at)
+
+------------------------------------------------------------------------------
+ 4) pipeline_runs  (one row per pipeline invocation)   [class PipelineRun]
+------------------------------------------------------------------------------
+  run_id               TEXT      PRIMARY KEY (UUID4 string)
+  sku_id               TEXT      NOT NULL, FK -> skus.sku_id
+  started_at           DATETIME  NOT NULL
+  completed_at         DATETIME  NULL
+  status               TEXT      NOT NULL, CHECK in ('pending','success','failed')
+  latency_ms           INTEGER   NULL
+  manifest_version     TEXT      NOT NULL
+  error                TEXT      NULL
+  INDEXES: idx_runs_sku (sku_id), idx_runs_started (started_at)
+
+------------------------------------------------------------------------------
+ 5) predictions  (one row per run)                     [class Prediction]
+------------------------------------------------------------------------------
+  run_id               TEXT      PRIMARY KEY, FK -> pipeline_runs.run_id
+  sku_id               TEXT      NOT NULL, FK -> skus.sku_id
+  demand_forecast      REAL      NULL   (Agent 1)
+  backorder_prob       REAL      NULL   (Agent 2)  CHECK 0..1
+  alarm_triggered      INTEGER   NULL   (Agent 2)  CHECK in (0,1)
+  urgency_score        REAL      NULL   (Agent 3)  CHECK 0..1
+  correction_factor    REAL      NULL   (Agent 5)  CHECK > 0
+  replenishment_qty    REAL      NULL   (Agent 4)
+  route                TEXT      NULL   (Agent 4)
+  supplier_risk        TEXT      NULL   (Agent 6)
+  recommendation       TEXT      NULL   (LLM node)
+  created_at           DATETIME  NOT NULL (UTC now)
+
+  LOAD-BEARING TABLE CHECKS:
+    * urgency_score IS NULL OR (urgency_score >= 0 AND urgency_score <= 1)
+    * alarm_triggered IS NULL OR alarm_triggered = 0 OR correction_factor = 1.0
+        (risk-suppression invariant: alarm raised => forecast not reduced)
+  INDEXES: idx_pred_sku (sku_id), idx_pred_urgency (urgency_score DESC),
+           idx_pred_alarm (alarm_triggered)
+
+------------------------------------------------------------------------------
+ 6) agent_traces  (one row per agent per run)          [class AgentTrace]
+------------------------------------------------------------------------------
+  trace_id             INTEGER   PRIMARY KEY (autoincrement)
+  run_id               TEXT      NOT NULL, FK -> pipeline_runs.run_id
+  agent_name           TEXT      NOT NULL
+  sequence             INTEGER   NOT NULL
+  status               TEXT      NOT NULL, CHECK in ('success','skipped','failed')
+  latency_ms           INTEGER   NULL
+  output               JSON      NULL
+  note                 TEXT      NULL
+  created_at           DATETIME  NOT NULL (UTC now)
+  INDEX: idx_traces_run (run_id)
+
+------------------------------------------------------------------------------
+ 7) forecast_actuals  (realized demand, for MAPE)      [class ForecastActual]
+------------------------------------------------------------------------------
+  id                   INTEGER   PRIMARY KEY (autoincrement)
+  sku_id               TEXT      NOT NULL, FK -> skus.sku_id
+  period               TEXT      NOT NULL  (e.g. '2026-08')
+  human_forecast       REAL      NULL
+  agent_forecast       REAL      NULL
+  actual_demand        REAL      NULL
+  recorded_at          DATETIME  NOT NULL (UTC now)
+  UNIQUE (sku_id, period)
+  INDEX: idx_actuals_sku_period (sku_id, period)
+
+==============================================================================
+ RELATIONSHIPS
+==============================================================================
+  suppliers      1 --< skus                  (supplier_id, nullable)
+  skus           1 --1 inventory_current      (sku_id is PK and FK)
+  skus           1 --< pipeline_runs          (sku_id)
+  skus           1 --< forecast_actuals       (sku_id, unique per period)
+  pipeline_runs  1 --1 predictions            (run_id is PK and FK)
+  pipeline_runs  1 --< agent_traces           (run_id)
+
+==============================================================================
+ QUICK REFERENCE (copy/paste)
+==============================================================================
+  cd /Users/home/Documents/Projects/Updated-Supply-Chain-Agentic_AI
+  ./venv/bin/python -m src.db.create_db            # create
+  ./venv/bin/python -m src.db.verify_db            # verify -> SCHEMA OK
+  ./venv/bin/python -m src.db.create_db --force    # drop + recreate
+  rm -f data/app.db data/app.db-wal data/app.db-shm # delete DB file
+==============================================================================

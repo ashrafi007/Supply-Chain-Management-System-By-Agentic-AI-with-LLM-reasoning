@@ -1,0 +1,64 @@
+==============================================================================
+ VERIFICATION COMMANDS — Agentic Supply Chain Management System
+ Run every command from the repo root, using the project venv (./venv/bin/python).
+==============================================================================
+
+cd /Users/home/Documents/Projects/Updated-Supply-Chain-Agentic_AI
+
+------------------------------------------------------------------------------
+ 1) DATABASE SCHEMA VERIFICATION
+------------------------------------------------------------------------------
+ Proves the schema's invariants are enforced by the DB (CHECK constraints,
+ foreign keys, PK uniqueness), not merely documented. Spec: .CLAUDE/database_spec.md
+
+   ./venv/bin/python -m src.db.verify_db
+
+ - Runs 10 checks (tables exist, FKs on, urgency_score range, suppression
+   invariant, bad FK rejected, duplicate sku_id rejected, no target column
+   leak, invalid enum values rejected, etc).
+ - Prints "SCHEMA OK" and exits 0 on success; prints each FAIL and exits 1
+   otherwise.
+
+------------------------------------------------------------------------------
+ 2) RAW CSV DATA-QUALITY AUDIT (read-only)
+------------------------------------------------------------------------------
+ Spec: .CLAUDE/csv_quality_audit_spec.md
+ Produces findings only — no row is dropped, no value is changed.
+
+   ./venv/bin/python -m audits.csv_quality_audit
+
+ - Prints a summary (row/column counts, SKU-cardinality Case A/B/C, finding
+   count) to stdout.
+ - Writes audits/reports/csv_quality_report.json (machine-readable) and
+   audits/reports/csv_quality_report.md (human-readable).
+ - Deterministic: re-running produces a byte-identical JSON report.
+
+------------------------------------------------------------------------------
+ 3) INFERENCE TOOL TEST SUITES (pytest)
+------------------------------------------------------------------------------
+ NOTE: only the Demand Predictor model file is present locally. The other
+ four models under Models/ are git-LFS pointers (4 KB stubs); their tests
+ will fail on model load until the real files are fetched (git lfs pull).
+
+   ./venv/bin/python -m pytest tests/test_demand_predictor_tool.py -v        [works now]
+   ./venv/bin/python -m pytest tests/test_risk_detector_tool.py -v           [needs LFS]
+   ./venv/bin/python -m pytest tests/test_inventory_rebalancer_tool.py -v    [needs LFS]
+   ./venv/bin/python -m pytest tests/test_forecast_optimizer_tool.py -v      [needs LFS]
+   ./venv/bin/python -m pytest tests/test_supplier_auditor_tool.py -v        [needs LFS]
+
+ Run the whole suite at once:
+
+   ./venv/bin/python -m pytest tests/ -v
+
+------------------------------------------------------------------------------
+ 4) SPOT-CHECKING THE DATABASE MANUALLY
+------------------------------------------------------------------------------
+ sqlite3 data/app.db ".tables"
+ sqlite3 data/app.db ".schema inventory_current"
+ sqlite3 data/app.db "SELECT COUNT(*) FROM inventory_current;"
+
+==============================================================================
+ SEE ALSO
+==============================================================================
+ run_commands/database_run.txt   - full database build/rebuild/inspect guide
+ run_commands/RUN_COMMANDS.txt   - per-tool TEST + MAIN example-runner commands

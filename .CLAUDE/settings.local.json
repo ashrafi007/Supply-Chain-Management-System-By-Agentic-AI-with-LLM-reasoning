@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "Bash(./venv/bin/python *)",
+      "Bash(python3 *)",
+      "Bash(/Users/home/Documents/Projects/Updated-Supply-Chain-Agentic_AI/venv/bin/python3 -)",
+      "Bash(time /Users/home/Documents/Projects/Updated-Supply-Chain-Agentic_AI/venv/bin/python3 -)"
+    ]
+  }
+}

@@ -1,0 +1,14 @@
+Feature,Importance
+backorder_probability,0.38071764
+safety_stock_urgency,0.330829
+months_of_stock_left,0.08693357
+in_transit_qty,0.06350763
+national_inv,0.03906772
+coverage_ratio,0.03196925
+inv_depletion_rate,0.016725412
+inventory_health_net,0.014151219
+lead_time,0.013345388
+min_bank,0.010145624
+transit_coverage,0.008425017
+backorder_pressure,0.0041825688
+oe_constraint,0.0
