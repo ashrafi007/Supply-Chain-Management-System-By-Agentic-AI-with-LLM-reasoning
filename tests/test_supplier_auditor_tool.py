@@ -52,7 +52,7 @@ BASE_ROW = {
 GRADE_D_RULE_ROW = {**BASE_ROW, 'pieces_past_due': 300.0}
 
 # Grade A (NONE): far low-risk_probability row (empirically confirmed prob ~0.006, well
-# below the artifact's real OPT_THRESH ~0.08, and not grade D, so both flags are False).
+# below the artifact's real OPT_THRESH ~0.36 (v2), and not grade D, so both flags are False).
 RISKY_ROW = {
     'national_inv': 5.0, 'lead_time': 45.0, 'in_transit_qty': 0.0,
     'forecast_3_month': 500.0, 'forecast_6_month': 1000.0, 'forecast_9_month': 1500.0,
@@ -64,16 +64,20 @@ RISKY_ROW = {
     'sales_trend': -0.5, 'perf_gap': 0.9,
 }
 
-# Grade C (MODEL): 70% interpolation between BASE_ROW and RISKY_ROW.
+# Grade C (MODEL): 65% interpolation between BASE_ROW and RISKY_ROW. Re-derived empirically
+# against the v2 (undersampled + retuned) artifact -- the v1 artifact's 70%-interpolation
+# row now lands in B under v2 (deeper trees / different scale_pos_weight shift the decision
+# surface; it is not monotonic along this interpolation line, so nearby percentages were
+# probed directly rather than assumed).
 GRADE_C_ROW = {
-    'national_inv': 153.5, 'lead_time': 33.0, 'in_transit_qty': 30.0,
-    'forecast_3_month': 440.0, 'forecast_6_month': 880.0, 'forecast_9_month': 1320.0,
-    'sales_1_month': 37.0, 'sales_3_month': 104.0, 'sales_6_month': 208.0, 'sales_9_month': 312.0,
-    'min_bank': 155.0, 'potential_issue': 0.7, 'pieces_past_due': 280.0,
-    'perf_6_month_avg': 0.32, 'perf_12_month_avg': 0.629,
-    'local_bo_qty': 210.0, 'deck_risk': 0.7, 'oe_constraint': 0.7, 'ppap_risk': 0.7,
-    'rev_stop': 0.7, 'went_on_backorder': 0.7, 'inv_velocity': -0.48, 'safety_gap': -130.0,
-    'sales_trend': -0.335, 'perf_gap': 0.636,
+    'national_inv': 178.25, 'lead_time': 31.0, 'in_transit_qty': 35.0,
+    'forecast_3_month': 430.0, 'forecast_6_month': 860.0, 'forecast_9_month': 1290.0,
+    'sales_1_month': 41.5, 'sales_3_month': 118.0, 'sales_6_month': 236.0, 'sales_9_month': 354.0,
+    'min_bank': 147.5, 'potential_issue': 0.65, 'pieces_past_due': 260.0,
+    'perf_6_month_avg': 0.365, 'perf_12_month_avg': 0.6505,
+    'local_bo_qty': 195.0, 'deck_risk': 0.65, 'oe_constraint': 0.65, 'ppap_risk': 0.65,
+    'rev_stop': 0.65, 'went_on_backorder': 0.65, 'inv_velocity': -0.41, 'safety_gap': -120.0,
+    'sales_trend': -0.3075, 'perf_gap': 0.592,
 }
 
 # Grade B (MODEL): 87% interpolation between BASE_ROW and RISKY_ROW.
@@ -108,7 +112,7 @@ class TestNormalInput:
         assert 0.0 <= r.risk_probability <= 1.0
         assert r.supplier_grade in ('A', 'B', 'C', 'D')
         assert r.trigger_reason in ('MODEL+RULE', 'MODEL', 'RULE', 'NONE')
-        assert output.model_version == 'xgboost_supplier_auditor_v1'
+        assert output.model_version == 'xgboost_supplier_auditor_v2'
         assert output.threshold_used == pytest.approx(output.threshold_used)
 
     def test_multiple_skus_all_produce_results(self):
@@ -326,7 +330,7 @@ class TestArtifactLoadPathResolution:
         assert loaded.model is not None
         assert loaded.preprocessor is not None
         assert loaded.feature_cols is not None
-        assert loaded.model_version == 'xgboost_supplier_auditor_v1'
+        assert loaded.model_version == 'xgboost_supplier_auditor_v2'
 
     def test_feature_cols_match_expected(self):
         loaded = load_supplier_auditor_artifact()

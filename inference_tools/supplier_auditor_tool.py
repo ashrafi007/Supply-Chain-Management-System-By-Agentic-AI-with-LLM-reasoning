@@ -155,7 +155,7 @@ GRADE_THRESHOLDS: dict[str, tuple[float, float]] = {
     "D": (0.70, 1.01),
 }
 
-DEFAULT_MODEL_VERSION = "xgboost_supplier_auditor_v1"
+DEFAULT_MODEL_VERSION = "xgboost_supplier_auditor_v2"
 
 
 @dataclass(frozen=True)
@@ -339,9 +339,9 @@ def combine_trigger_flags(
     rule-based override. Kept as a standalone pure function (rather than inlined in
     audit_suppliers()) so the RULE-only branch — unreachable via the real loaded model's
     threshold, since GRADE_THRESHOLDS["D"] starts at 0.70 which is always >= the actual
-    trained OPT_THRESH (~0.08), making rule_flag-without-model_flag structurally impossible
-    at the real threshold — can still be exercised directly in tests with a synthetic
-    threshold.
+    trained OPT_THRESH (v2: ~0.36; v1 was ~0.08), making rule_flag-without-model_flag
+    structurally impossible at the real threshold — can still be exercised directly in
+    tests with a synthetic threshold.
 
     Returns:
         (triggered, reason) where reason is one of
