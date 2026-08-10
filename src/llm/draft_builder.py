@@ -7,6 +7,20 @@ in tests/llm/test_draft_builder.py: every number or category that appears in a
 draft must come from the caller-supplied field_values (real run data) or from
 AGENT_GROUNDING (the real, documented meaning) -- never free-text commentary that
 isn't traceable to one of those two sources.
+
+Audience: this draft is what a non-technical reader sees whenever polishing is
+skipped or unavailable (short draft, API error, rate limit) -- not just a fallback
+for developers. So it is written directly in plain business language throughout,
+not "plain sentence + a raw jargon aside" -- earlier versions of this module
+appended a "(Technical basis: ...)" clause with the literal grounding text (e.g.
+"correction_factor < 0.90 -- cut the production/purchasing plan.") after every
+plain sentence; that defeated the point the moment polish wasn't available, which
+is exactly when a non-technical reader is most likely to see the raw draft
+unmodified. AGENT_GROUNDING's exact field names and internal thresholds still
+live in AGENT_OUTPUT_MEANINGS.md / grounding.py for anyone who needs the technical
+detail -- this module no longer repeats them verbatim in the human-facing text
+except where a real number (like the 0.945 alert threshold) is itself part of
+the plain sentence, not decoration bolted onto it.
 """
 
 from __future__ import annotations
@@ -36,88 +50,107 @@ def _fmt_num(value: float) -> str:
     return f"{value:.2f}"
 
 
+# Plain-language framing for each supplier grade -- business outcome, not the
+# underlying probability band.
+_PLAIN_SUPPLIER_GRADE = {
+    "A": "This supplier looks solid -- approved, no action needed.",
+    "B": "This supplier is worth keeping an eye on -- schedule a contract review.",
+    "C": "This supplier is at risk -- escalate to procurement for a closer look.",
+    "D": "This supplier is in the critical zone -- may need to be cut off from automatic ordering.",
+}
+
+# Plain-language framing for a forecast-optimizer recommendation.
+_PLAIN_FORECAST_RECOMMENDATION = {
+    "REDUCE_PLAN": "the original human forecast looks too high, so we recommend cutting the purchasing/production plan",
+    "INCREASE_PLAN": "the original human forecast looks too low, so we recommend raising the purchasing/production plan",
+    "HOLD": "the original human forecast looks accurate, so no change is recommended",
+}
+
+
 def _build_demand_predictor_draft(field_values: dict) -> str:
     forecast = field_values.get("demand_forecast")
     if forecast is None:
-        return (
-            "Agent 1 (Demand Predictor) did not produce a forecast for this SKU "
-            "(demand_forecast is null)."
-        )
-    meaning = AGENT_GROUNDING["demand_predictor"]["demand_forecast"]["description"]
-    return (
-        f"Agent 1 (Demand Predictor) forecasts {_fmt_num(forecast)} units of demand "
-        f"for this SKU. {meaning}"
-    )
+        return "We don't have a sales forecast for this product right now -- the demand model didn't return a result."
+    return f"Expected demand: this product is projected to sell about {_fmt_num(forecast)} units over the next 6 months."
 
 
 def _build_risk_detector_draft(field_values: dict) -> str:
     prob = field_values.get("backorder_prob")
     alarm = field_values.get("alarm_triggered")
     if prob is None:
-        return "Agent 2 (Risk Detector) did not produce a risk assessment for this SKU."
-    g = AGENT_GROUNDING["risk_detector"]
-    threshold = g["alarm_triggered"]["threshold"]
+        return "We don't have a stockout-risk read on this product yet."
+    threshold = AGENT_GROUNDING["risk_detector"]["alarm_triggered"]["threshold"]
     if alarm:
-        status = f"flagged as high risk (probability >= {threshold}, the operational threshold)"
-    else:
-        status = f"not flagged as high risk (below the {threshold} operational threshold)"
+        return (
+            f"Stockout risk: HIGH. There's a {_fmt_pct(prob)} chance this product runs out of "
+            f"stock, which is high enough that the system has raised an alert (our alert line is "
+            f"{threshold}), so this needs attention now."
+        )
     return (
-        f"Agent 2 (Risk Detector) estimates a {_fmt_pct(prob)} probability of backorder "
-        f"for this SKU and it is {status}. {g['alarm_triggered']['description']}"
+        f"Stockout risk: low. There's a {_fmt_pct(prob)} chance this product runs out of "
+        f"stock, below our {threshold} alert line, so no urgent action is needed here."
     )
 
 
 def _build_inventory_rebalancer_draft(field_values: dict) -> str:
     urgency = field_values.get("urgency_score")
     if urgency is None:
-        return "Agent 3 (Inventory Rebalancer) did not produce an urgency score for this SKU."
-    g = AGENT_GROUNDING["inventory_rebalancer"]
-    parts = [
-        f"Agent 3 (Inventory Rebalancer) computed a restock urgency score of "
-        f"{_fmt_num(urgency)} for this SKU. {g['urgency_score']['description']}"
-    ]
+        return "We don't have a restocking-urgency read on this product yet."
+    parts = [f"Restock urgency: {_fmt_num(urgency)} out of 1.00 (higher means more urgent)."]
     qty = field_values.get("recommended_qty")
     rank = field_values.get("batch_rank")
     if qty is not None:
-        qty_sentence = f"It recommends ordering {qty:.0f} units. {g['recommended_qty']['description']}"
-        parts.append(qty_sentence)
+        parts.append(f"Recommended action: order {qty:.0f} more units to bring this product back to a safe stock level.")
     if rank is not None:
-        parts.append(f"Within the current batch, this SKU ranks #{rank} by urgency. {g['batch_rank']['description']}")
+        parts.append(f"This is currently the #{rank} most urgent product in this batch.")
     return " ".join(parts)
 
 
 def _build_forecast_optimizer_draft(field_values: dict) -> str:
     factor = field_values.get("correction_factor")
     if factor is None:
-        return "Agent 5 (Forecast Optimizer) did not run for this SKU."
-    g = AGENT_GROUNDING["forecast_optimizer"]
-    parts = [
-        f"Agent 5 (Forecast Optimizer) applies a correction factor of {_fmt_num(factor)} "
-        f"to the human forecast for this SKU. {g['correction_factor']['description']}"
-    ]
+        return "The forecast-correction check didn't run for this product."
     recommendation = field_values.get("recommendation")
-    if recommendation and recommendation in g["recommendation"]["values"]:
-        parts.append(f"Recommendation: {recommendation}. {g['recommendation']['values'][recommendation]}")
+    plain = _PLAIN_FORECAST_RECOMMENDATION.get(
+        recommendation, "here's how the forecast compares to the original human estimate"
+    )
+    parts = [f"Forecast check: {plain} (adjustment factor {_fmt_num(factor)})."]
     bias_severity = field_values.get("bias_severity")
-    if bias_severity and bias_severity in g["bias_severity"]["values"]:
-        parts.append(f"Bias severity: {bias_severity}. {g['bias_severity']['values'][bias_severity]}")
+    if bias_severity == "SEVERE":
+        parts.append("The human forecast has been significantly too high for a while now, worth a closer look.")
+    elif bias_severity == "MILD":
+        parts.append("The human forecast has been a bit high lately, worth noting.")
     if field_values.get("risk_override_applied"):
-        parts.append(g["risk_override_applied"]["description"])
+        parts.append(
+            "Note: this forecast was deliberately left unchanged even though the numbers might "
+            "suggest otherwise, because this product is already flagged as at risk of running "
+            "out -- the policy is to never shrink the forecast for a product that's already at "
+            "risk of stocking out."
+        )
     return " ".join(parts)
 
 
 def _build_supplier_auditor_draft(field_values: dict) -> str:
     grade = field_values.get("supplier_risk")
     if grade is None:
-        return "Agent 6 (Supplier Auditor) did not produce a grade for this supplier."
+        return "We don't have a supplier risk grade for this yet."
     g = AGENT_GROUNDING["supplier_auditor"]
-    meaning = g["supplier_risk"]["values"][grade]
-    parts = [f"This supplier received grade {grade}. {meaning}"]
+    plain = _PLAIN_SUPPLIER_GRADE.get(grade, "")
+    parts = [f"Supplier check: grade {grade}. {plain}"]
+    if grade == "D":
+        # The only place this module still states a raw probability band verbatim --
+        # kept because supplier grade is a regulatory/audit-relevant number, and this
+        # exact phrasing ("Critical", "[0.70, 1.00]") is asserted by
+        # tests/llm/test_draft_builder.py as a deliberate traceability floor for the
+        # single highest-stakes category in the system (stop_auto_buy eligibility).
+        parts.append(f"({g['supplier_risk']['values']['D']})")
     if field_values.get("stop_auto_buy_triggered"):
-        parts.append(g["stop_auto_buy_triggered"]["description"])
+        parts.append("Automatic purchase orders from this supplier have been paused until a human reviews it.")
         reason = field_values.get("trigger_reason")
-        if reason and reason in g["trigger_reason"]["values"]:
-            parts.append(f"Trigger reason: {reason}. {g['trigger_reason']['values'][reason]}")
+        if reason == "MODEL+RULE":
+            parts.append("Both our model and a hard business rule agree on this -- a strong signal.")
+        elif reason == "RULE":
+            parts.append("This was caught by a safety-net rule (severe overdue deliveries) even though the model alone didn't flag it.")
     return " ".join(parts)
 
 
@@ -138,56 +171,68 @@ def build_agent_draft(agent_name: str, field_values: dict) -> str:
     return _AGENT_DRAFT_BUILDERS[agent_name](field_values)
 
 
-# Order the whole-run draft walks the reduced PipelineState fields in.
-_RUN_FIELD_ORDER = (
-    "demand_forecast", "backorder_prob", "alarm_triggered",
-    "urgency_score", "correction_factor", "supplier_risk",
-)
-
-
 def build_run_draft(sku_id: str, predictions_row: dict, suppression_note: str | None = None) -> str:
     """
     Whole-run version. Walks the reduced PipelineState fields (demand_forecast,
-    backorder_prob, alarm_triggered, urgency_score, correction_factor, supplier_risk),
-    looks up each one's grounding, and assembles a short paragraph. If
-    suppression_note is present (from agent_traces), explicitly states the override
-    using forecast_optimizer's risk_override_applied grounding text.
+    backorder_prob, alarm_triggered, urgency_score, correction_factor, supplier_risk)
+    and assembles a short paragraph in plain business language -- what this
+    product's numbers mean and what (if anything) to do about it. This is the
+    version shown by default (agent_name=None) -- the one a non-technical reader
+    is most likely to see, including in the raw-draft fallback path when polishing
+    isn't available -- so it stays fully plain-English with no trailing jargon
+    aside, except the one literal token (suppression_note, e.g.
+    "suppressed: alarm_triggered=1") that a caller supplied and this function is
+    contractually required to surface verbatim for audit purposes.
     """
-    parts = [f"Summary for SKU {sku_id}:"]
+    parts = [f"Here's a plain-English summary for product {sku_id}:"]
 
     forecast = predictions_row.get("demand_forecast")
     if forecast is not None:
-        parts.append(f"Agent 1 forecasts {_fmt_num(forecast)} units of demand over the next 6 months.")
+        parts.append(f"We expect to sell about {_fmt_num(forecast)} units of this product over the next 6 months.")
 
     prob = predictions_row.get("backorder_prob")
     alarm = predictions_row.get("alarm_triggered")
     if prob is not None:
         threshold = AGENT_GROUNDING["risk_detector"]["alarm_triggered"]["threshold"]
-        status = "flagged as high risk" if alarm else "not flagged as high risk"
-        parts.append(f"Agent 2 estimates a {_fmt_pct(prob)} backorder probability and the SKU is {status} (threshold {threshold}).")
+        if alarm:
+            parts.append(
+                f"Stockout risk is HIGH -- a {_fmt_pct(prob)} chance of running out, which is high "
+                f"enough to trip our alert line (set at {threshold}), so this needs attention."
+            )
+        else:
+            parts.append(
+                f"Stockout risk is low -- a {_fmt_pct(prob)} chance of running out, below our "
+                f"{threshold} alert line, so no urgent action is needed here."
+            )
 
     urgency = predictions_row.get("urgency_score")
     if urgency is not None:
-        parts.append(f"Agent 3 assigns a restock urgency score of {_fmt_num(urgency)}.")
+        parts.append(
+            f"On a 0-to-1 scale of how urgently it needs restocking, this product scores "
+            f"{_fmt_num(urgency)} (higher means more urgent)."
+        )
 
     factor = predictions_row.get("correction_factor")
     if factor is not None:
-        rec_values = AGENT_GROUNDING["forecast_optimizer"]["recommendation"]["values"]
         if factor < 0.90:
-            label = "REDUCE_PLAN"
+            plain = "the original human forecast looks too high, so we recommend cutting the purchasing/production plan"
         elif factor > 1.10:
-            label = "INCREASE_PLAN"
+            plain = "the original human forecast looks too low, so we recommend raising the purchasing/production plan"
         else:
-            label = "HOLD"
-        parts.append(f"Agent 5 applies a correction factor of {_fmt_num(factor)} to the human forecast ({label}: {rec_values[label]}).")
+            plain = "the original human forecast looks accurate, so no change is recommended"
+        parts.append(f"On the purchasing plan: {plain} (adjustment factor {_fmt_num(factor)}).")
 
     if suppression_note:
-        override_desc = AGENT_GROUNDING["forecast_optimizer"]["risk_override_applied"]["description"]
-        parts.append(f"Note: {suppression_note}. {override_desc}")
+        parts.append(
+            f"Note ({suppression_note}): this forecast was deliberately left unchanged even "
+            f"though the numbers might suggest otherwise, because this product is already "
+            f"flagged as at risk of running out -- the policy is to never shrink the forecast "
+            f"for a product that's already at risk of stocking out."
+        )
 
     grade = predictions_row.get("supplier_risk")
     if grade is not None:
-        g = AGENT_GROUNDING["supplier_auditor"]["supplier_risk"]
-        parts.append(f"Agent 6 grades the supplier {grade}: {g['values'][grade]}")
+        plain_grade = _PLAIN_SUPPLIER_GRADE.get(grade, "")
+        parts.append(f"Supplier check: grade {grade}. {plain_grade}")
 
     return " ".join(parts)

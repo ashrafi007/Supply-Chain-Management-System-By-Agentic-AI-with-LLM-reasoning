@@ -1,7 +1,7 @@
 """
-Minimal FastAPI application, scaffolded solely to host the on-demand explanation
-endpoint (.CLAUDE/llm_insertion_spec.md SS10-11). No other API surface exists yet --
-this is intentionally thin, not a general web layer.
+FastAPI application backing the frontend: pipeline runs/predictions, LLM
+explanations, the order_queue (list/enqueue/sweep), suppliers, SKU onboarding,
+and dashboard stats.
 """
 
 from __future__ import annotations
@@ -11,8 +11,9 @@ from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routers import explanations, runs
+from src.api.routers import explanations, queue, runs, skus, stats, suppliers
 from src.llm.client import OpenRouterClient
 
 load_dotenv()
@@ -30,5 +31,28 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Supply Chain Agentic AI", lifespan=lifespan)
+
+# CORS_ORIGINS: comma-separated allowlist, e.g. "http://localhost:3000,https://app.example.com".
+# Defaults to "*" (any origin) for local dev -- without this, every browser request from a
+# frontend on a different origin (which is the normal case) is blocked before it ever reaches
+# a route. allow_credentials is forced off when the origin list is "*": browsers reject the
+# combination of a wildcard origin with credentialed requests outright, so there is nothing to
+# gain by setting it True here -- set explicit origins in CORS_ORIGINS if cookies/auth headers
+# with credentials are ever needed.
+_cors_origins_env = os.environ.get("CORS_ORIGINS", "*")
+_cors_origins = ["*"] if _cors_origins_env == "*" else [o.strip() for o in _cors_origins_env.split(",")]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_origins != ["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(explanations.router)
 app.include_router(runs.router)
+app.include_router(queue.router)
+app.include_router(suppliers.router)
+app.include_router(skus.router)
+app.include_router(stats.router)

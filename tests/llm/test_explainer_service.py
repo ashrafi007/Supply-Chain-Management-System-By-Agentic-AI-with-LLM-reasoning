@@ -17,11 +17,16 @@ from tests.llm.conftest import StubOpenRouterClient
 def test_first_call_stores_row_second_call_uses_cache(db_session, seeded_run):
     client = StubOpenRouterClient()
 
-    first = explainer_service.explain(db_session, client, seeded_run, "risk_detector")
+    # Whole-run (agent_name=None), not a single agent: seeded_run's rich field set
+    # (demand + risk + urgency + correction + suppression + grade) reliably produces
+    # a draft over SHORT_DRAFT_WORD_THRESHOLD so this test actually exercises the
+    # polish path -- individual agents' humanized drafts (e.g. risk_detector's) are
+    # now intentionally short one-sentence summaries and would skip polish entirely.
+    first = explainer_service.explain(db_session, client, seeded_run, None)
     assert first["cached"] is False
     assert client.call_count == 1
 
-    second = explainer_service.explain(db_session, client, seeded_run, "risk_detector")
+    second = explainer_service.explain(db_session, client, seeded_run, None)
     assert second["cached"] is True
     assert client.call_count == 1  # stub not called again
     assert second["explanation"] == first["explanation"]
@@ -30,7 +35,7 @@ def test_first_call_stores_row_second_call_uses_cache(db_session, seeded_run):
 def test_api_failure_falls_back_to_draft_no_exception(db_session, seeded_run):
     client = StubOpenRouterClient(raise_unavailable=True)
 
-    result = explainer_service.explain(db_session, client, seeded_run, "risk_detector")
+    result = explainer_service.explain(db_session, client, seeded_run, None)
 
     assert result["was_polished"] is False
     assert result["fallback_reason"] == "api_error"

@@ -8,7 +8,12 @@ import httpx
 
 from src.llm.prompts import POLISH_PROMPT
 
-DEFAULT_MODEL = "meta-llama/llama-3.1-8b-instruct:free"
+# meta-llama/llama-3.1-8b-instruct:free was retired by OpenRouter (now 404s -- paid-only
+# slug replaced it). Swapped 2026-08-10 to a currently-live free-tier model; verified
+# directly against OpenRouter's /models endpoint before pinning. Re-verify if this
+# ever starts 404ing too -- free-tier model availability changes on OpenRouter's side,
+# not this codebase's.
+DEFAULT_MODEL = "openai/gpt-oss-20b:free"
 _BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 _TIMEOUT_SECONDS = 15.0
 

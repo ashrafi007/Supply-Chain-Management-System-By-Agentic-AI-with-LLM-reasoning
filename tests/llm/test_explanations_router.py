@@ -59,9 +59,10 @@ def test_api_failure_still_returns_200_with_fallback_reason(db_session, seeded_r
     client = _client_with_overrides(db_session, StubOpenRouterClient(raise_unavailable=True))
     try:
         with client:
-            response = client.post(
-                f"/predictions/{seeded_run}/explain", params={"agent_name": "risk_detector"}
-            )
+            # Whole-run, not a single agent: seeded_run's rich field set reliably
+            # exceeds SHORT_DRAFT_WORD_THRESHOLD, so this actually exercises the
+            # "API call attempted and failed" path rather than "skipped as short."
+            response = client.post(f"/predictions/{seeded_run}/explain")
             assert response.status_code == 200
             assert response.json()["fallback_reason"] == "api_error"
     finally:

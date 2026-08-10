@@ -29,7 +29,8 @@ def default_success_fields() -> dict:
         correction_factor=1.0,
         replenishment_qty=50.0,
         route="standard",
-        supplier_risk="low",
+        supplier_risk="A",  # must be a real A/B/C/D grade -- draft_builder.py looks
+        # this up in AGENT_GROUNDING (see llm's use of StubExecutor via sweep_service)
         recommendation="reorder 50 units",
     )
 

@@ -14,6 +14,9 @@ from datetime import date, datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from src.db.models import PipelineRun
+from src.llm import explainer_service
+from src.llm.client import OpenRouterClient
 from src.pipeline_state import PipelineExecutor
 from src.repository.pipeline_service import run_pipeline_for_skus
 
@@ -44,3 +47,31 @@ def run_sweep(session: Session, as_of: date, executor: PipelineExecutor) -> dict
         "evaluated_sku_ids": list(due_sku_ids),
         "run_ids": list(run_ids),
     }
+
+
+def run_sweep_and_explain(
+    session: Session, as_of: date, executor: PipelineExecutor, llm_client: OpenRouterClient
+) -> dict:
+    """run_sweep(), then a whole-run LLM explanation for every SKU that was actually
+    evaluated AND succeeded (llm_insertion_spec.md SS9 raises RunNotFoundError for a
+    failed run -- no predictions row exists to explain, so those are skipped, not
+    retried or errored).
+
+    Kept as a separate function rather than folding this into run_sweep() itself:
+    llm_insertion_spec.md SS2 documents LLM generation as on-demand, deliberately never
+    part of a sweep, specifically so a bare sweep never depends on network/API
+    availability. This is the opt-in entrypoint for a caller (a scheduler, a CLI) that
+    *does* want "every SKU gets explained automatically" -- run_sweep() itself, and its
+    "sweep never touches the network" test guarantee, are unchanged.
+    """
+    result = run_sweep(session, as_of, executor)
+
+    explanations: dict[str, dict] = {}
+    for run_id in result["run_ids"]:
+        run = session.get(PipelineRun, run_id)
+        if run is None or run.status != "success":
+            continue
+        explanations[run_id] = explainer_service.explain(session, llm_client, run_id, agent_name=None)
+
+    result["explanations"] = explanations
+    return result

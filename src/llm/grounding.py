@@ -1,5 +1,5 @@
 """
-Grounding data for LLM explanations. Source of truth: AGENT_OUTPUT_MEANINGS.md.
+Grounding data for LLM explanations. Source of truth: .CLAUDE/AGENT_OUTPUT_MEANINGS.md.
 Do not add any meaning here that isn't traceable to that document.
 
 Deviation from llm_insertion_spec.md SS5: the spec's draft used keys like

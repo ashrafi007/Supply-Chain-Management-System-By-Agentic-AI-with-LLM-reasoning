@@ -2,17 +2,26 @@
 
 Full inventory of tracked project files (excludes `venv/`, `.git/`, `__pycache__/`, `.DS_Store`).
 
-## `.CLAUDE/` — spec documents
+## `.CLAUDE/` — spec documents + project docs
+All project-level `.md` docs live here now, alongside the specs (moved from repo root).
+- `.CLAUDE/AGENT_OUTPUT_MEANINGS.md`
 - `.CLAUDE/csv_quality_audit_spec.md`
+- `.CLAUDE/DAILY_REPORT_2026-07-27.md`
 - `.CLAUDE/database_spec.md`
 - `.CLAUDE/demand_predictor_wrapper_spec.md`
 - `.CLAUDE/forecast_optimizer_inference_tool_SPEC.md`
 - `.CLAUDE/inventory_rebalancer_inference_tool_SPEC.md`
+- `.CLAUDE/llm_activation_spec.md`
+- `.CLAUDE/llm_insertion_spec.md`
 - `.CLAUDE/orchestrator_spec.md`
+- `.CLAUDE/PRESENTATION_PLAN.md`
+- `.CLAUDE/PROJECT_FILE_PATHS.md`
+- `.CLAUDE/QUICK_START.md`
 - `.CLAUDE/queue_migration_spec.md`
 - `.CLAUDE/repository_layer_spec.md`
 - `.CLAUDE/risk_detector_inference_tool_SPEC.md`
 - `.CLAUDE/seed_data_spec.md`
+- `.CLAUDE/SESSION_SUMMARY.md`
 - `.CLAUDE/settings.local.json`
 - `.CLAUDE/supplier_auditor_inference_tool_SPEC.md`
 
@@ -20,14 +29,13 @@ Full inventory of tracked project files (excludes `venv/`, `.git/`, `__pycache__
 - `.gitattributes`
 - `.gitignore`
 - `.gitignore.save`
-- `QUICK_START.md`
 - `requirements.txt`
 - `features.py`
-- `run_demand_predictor_example.py`
-- `run_forecast_optimizer_example.py`
-- `run_rebalancer_example.py`
-- `run_risk_detector_example.py`
-- `run_supplier_auditor_example.py`
+
+> Note: this file's own inventory otherwise reflects an earlier session (predates the
+> API layer additions, `scripts/run_sweep.py`, and the `run_*_example.py` deletion) --
+> flagged here rather than silently left wrong; ask for a full regeneration if you need
+> this fully current.
 
 ## `.pytest_cache/`
 - `.pytest_cache/.gitignore`

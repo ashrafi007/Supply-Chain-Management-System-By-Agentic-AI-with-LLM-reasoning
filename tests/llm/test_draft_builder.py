@@ -68,7 +68,13 @@ def test_short_draft_is_flagged_for_skip():
     assert len(short.split()) < SHORT_DRAFT_WORD_THRESHOLD
     assert is_short_draft(short) is True
 
-    long_draft = build_agent_draft("risk_detector", {"backorder_prob": 0.9, "alarm_triggered": True})
+    # risk_detector's own draft is intentionally short now (humanized single-sentence
+    # form -- see draft_builder.py's module docstring); use the multi-sentence
+    # forecast_optimizer override scenario to exercise the "genuinely long" branch.
+    long_draft = build_agent_draft(
+        "forecast_optimizer",
+        {"correction_factor": 1.0, "recommendation": "HOLD", "risk_override_applied": True},
+    )
     assert is_short_draft(long_draft) is False
 
 
