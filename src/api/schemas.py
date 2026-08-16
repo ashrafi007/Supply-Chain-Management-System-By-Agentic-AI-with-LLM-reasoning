@@ -126,6 +126,9 @@ class NewSkuResult(BaseModel):
     sku_id: str
     queued: QueueEntryOut
     run_id: str | None = None
+    # Raw dict, not a typed model -- matches explanations.py's own router, which
+    # returns explainer_service.explain()'s dict as-is with no response_model.
+    explanation: dict | None = None
 
 
 # ── dashboard stats ──────────────────────────────────────────────────────────

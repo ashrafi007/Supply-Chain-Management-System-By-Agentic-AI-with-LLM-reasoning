@@ -6,7 +6,12 @@
       "Bash(python3 *)",
       "Bash(/Users/home/Documents/Projects/Updated-Supply-Chain-Agentic_AI/venv/bin/python3 -)",
       "Bash(time /Users/home/Documents/Projects/Updated-Supply-Chain-Agentic_AI/venv/bin/python3 -)",
-      "Bash(venv/bin/python3 -m pytest -q)"
+      "Bash(venv/bin/python3 -m pytest -q)",
+      "Bash(curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs)",
+      "Bash(sh -s -- -y --default-toolchain stable)",
+      "Bash(sqlite3 data/app.db \"INSERT INTO order_queue \\(sku_id, status, queued_at, due_date, source\\) VALUES \\('1111949', 'pending', datetime\\('now'\\), date\\('now'\\), 'manual_add'\\);\")",
+      "Bash(sqlite3 data/app.db \"SELECT * FROM order_queue;\")",
+      "Bash(sqlite3 data/app.db \"DELETE FROM order_queue;\")"
     ]
   }
 }

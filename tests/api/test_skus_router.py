@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from src.api.deps import get_db
+from src.api.deps import get_db, get_llm_client
 from src.api.main import app
+from tests.llm.conftest import StubOpenRouterClient
 
 _FULL_RAW_FEATURES = {
     "national_inv": 100.0, "lead_time": 8.0, "in_transit_qty": 40.0,
@@ -17,11 +18,16 @@ _FULL_RAW_FEATURES = {
 }
 
 
-def _client(db_session) -> TestClient:
+def _client(db_session, llm_client=None) -> TestClient:
     def _override_get_db():
         yield db_session
 
     app.dependency_overrides[get_db] = _override_get_db
+    # Stub the LLM client whenever a test might hit run_now=True -- without this,
+    # explain() would attempt a real network call with the fixture's dummy API key
+    # (still degrades gracefully via LLMUnavailableError, but it's a slow, pointless
+    # real request; every other router test file stubs this the same way).
+    app.dependency_overrides[get_llm_client] = lambda: llm_client or StubOpenRouterClient()
     return TestClient(app)
 
 
@@ -92,8 +98,9 @@ def test_post_skus_rejects_duplicate_sku_id(db_session, known_sku_id):
         app.dependency_overrides.clear()
 
 
-def test_post_skus_run_now_executes_the_real_pipeline(db_session):
-    client = _client(db_session)
+def test_post_skus_run_now_executes_pipeline_marks_evaluated_and_explains(db_session):
+    stub_client = StubOpenRouterClient(response="Polished new-SKU explanation.")
+    client = _client(db_session, llm_client=stub_client)
     try:
         with client:
             response = client.post("/skus", json={
@@ -104,5 +111,27 @@ def test_post_skus_run_now_executes_the_real_pipeline(db_session):
             assert response.status_code == 201
             body = response.json()
             assert body["run_id"] is not None
+            # order_queue's own bookkeeping must reflect the run -- this was the bug:
+            # the pipeline ran, but last_run_id/last_evaluated_at stayed null forever.
+            assert body["queued"]["last_run_id"] == body["run_id"]
+            assert body["queued"]["last_evaluated_at"] is not None
+            assert body["explanation"]["explanation"] == "Polished new-SKU explanation."
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_skus_without_run_now_has_no_explanation(db_session):
+    client = _client(db_session)
+    try:
+        with client:
+            response = client.post("/skus", json={
+                "sku_id": "TEST-NEW-SKU-API-NORUN",
+                "raw_features": _FULL_RAW_FEATURES,
+            })
+            assert response.status_code == 201
+            body = response.json()
+            assert body["run_id"] is None
+            assert body["explanation"] is None
+            assert body["queued"]["last_run_id"] is None
     finally:
         app.dependency_overrides.clear()

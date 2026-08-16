@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routers import explanations, queue, runs, skus, stats, suppliers
+from src.api.routers import db, explanations, queue, runs, skus, stats, suppliers
 from src.llm.client import OpenRouterClient
 
 load_dotenv()
@@ -56,3 +56,4 @@ app.include_router(queue.router)
 app.include_router(suppliers.router)
 app.include_router(skus.router)
 app.include_router(stats.router)
+app.include_router(db.router)

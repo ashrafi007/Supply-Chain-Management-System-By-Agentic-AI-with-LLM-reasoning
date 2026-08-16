@@ -3,6 +3,10 @@
     GET  /queue                 -- list queue rows, optional ?status= filter
     GET  /queue/{sku_id}        -- one queue row
     POST /queue                 -- enqueue an existing SKU (ingestion_service)
+    POST /queue/{sku_id}/run    -- run one already-queued SKU right now, regardless
+                                    of due_date (the sweep only picks up rows whose
+                                    due_date has arrived; this is the "run it now"
+                                    escape hatch for a SKU queued for later)
     POST /queue/sweep           -- run the sweep now (sweep_service.run_sweep_and_explain)
 
 No business logic lives here -- every route is a thin adapter over the existing
@@ -11,7 +15,7 @@ queue/repository/sweep service layer, same discipline as runs.py and explanation
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
@@ -19,8 +23,10 @@ from sqlalchemy.orm import Session
 
 from src.api.deps import get_db, get_llm_client
 from src.api.schemas import EnqueueRequest, QueueEntryOut, SweepResult
+from src.db.models import PipelineRun
+from src.llm import explainer_service
 from src.llm.client import OpenRouterClient
-from src.queue import ingestion_service, sweep_service
+from src.queue import ingestion_service, queue_repository, sweep_service
 from src.queue.models import OrderQueue
 
 router = APIRouter()
@@ -56,6 +62,35 @@ def enqueue_sku(body: EnqueueRequest, session: Session = Depends(get_db)) -> Ord
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return session.get(OrderQueue, body.sku_id)
+
+
+@router.post("/queue/{sku_id}/run")
+def run_now(
+    sku_id: str,
+    explain: bool = True,
+    session: Session = Depends(get_db),
+    client: OpenRouterClient = Depends(get_llm_client),
+) -> dict:
+    """Run one already-queued SKU through the orchestrator immediately, independent
+    of its due_date -- the sweep endpoint only picks up rows that are actually due
+    today, so a SKU queued for next week would otherwise sit untouched until then.
+    """
+    row = session.get(OrderQueue, sku_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"sku_id {sku_id!r} is not in order_queue")
+
+    from src.orchestrator.executor import LangGraphExecutor
+    from src.repository.pipeline_service import run_pipeline_for_sku
+
+    run_id = run_pipeline_for_sku(session, sku_id, LangGraphExecutor())
+    queue_repository.mark_evaluated(session, sku_id, run_id, datetime.now(timezone.utc))
+
+    run = session.get(PipelineRun, run_id)
+    explanation = None
+    if explain and run is not None and run.status == "success":
+        explanation = explainer_service.explain(session, client, run_id, agent_name=None)
+
+    return {"run_id": run_id, "status": run.status if run else "unknown", "explanation": explanation}
 
 
 @router.post("/queue/sweep", response_model=SweepResult)

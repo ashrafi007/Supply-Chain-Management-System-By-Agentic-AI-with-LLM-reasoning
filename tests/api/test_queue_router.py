@@ -96,6 +96,42 @@ def test_post_queue_rejects_unknown_sku(db_session):
         app.dependency_overrides.clear()
 
 
+def test_post_queue_run_now_evaluates_sku_regardless_of_due_date(db_session, known_sku_id):
+    # due_date far in the future -- a sweep today would NOT pick this up, proving
+    # run-now is genuinely independent of the sweep's due-date gating.
+    queue_repository.enqueue(
+        db_session, known_sku_id, due_date=date.today() + timedelta(days=30), source="manual_add"
+    )
+    stub_client = StubOpenRouterClient(response="Polished run-now explanation.")
+    client = _client(db_session, llm_client=stub_client)
+    try:
+        with client:
+            response = client.post(f"/queue/{known_sku_id}/run")
+            assert response.status_code == 200
+            body = response.json()
+            assert body["status"] == "success"
+            assert body["run_id"]
+            assert body["explanation"]["explanation"] == "Polished run-now explanation."
+
+            # order_queue itself reflects the run -- last_run_id populated, still
+            # pending (due_date hasn't arrived, sweep semantics untouched by this).
+            entry = client.get(f"/queue/{known_sku_id}").json()
+            assert entry["last_run_id"] == body["run_id"]
+            assert entry["status"] == "pending"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_post_queue_run_now_404_for_unqueued_sku(db_session, known_sku_id):
+    client = _client(db_session, llm_client=StubOpenRouterClient())
+    try:
+        with client:
+            response = client.post(f"/queue/{known_sku_id}/run")
+            assert response.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_post_queue_sweep_runs_due_sku_and_explains_it(db_session, known_sku_id):
     queue_repository.enqueue(db_session, known_sku_id, due_date=date.today(), source="manual_add")
     stub_client = StubOpenRouterClient(response="Polished sweep explanation.")

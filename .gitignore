@@ -14,3 +14,6 @@ Dataset/*.csv
 data/app.db
 data/app.db-wal
 data/app.db-shm
+data/test.db
+data/test.db-wal
+data/test.db-shm

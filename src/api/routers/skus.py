@@ -3,7 +3,9 @@
     GET  /skus            -- list
     GET  /skus/{sku_id}   -- detail (skus row + its raw inventory_current features)
     POST /skus            -- add a new SKU (skus + inventory_current), enqueue it into
-                              order_queue, optionally run the pipeline immediately
+                              order_queue, optionally run the pipeline immediately and
+                              generate its AI explanation (same "run now" semantics as
+                              POST /queue/{sku_id}/run)
 
 No business logic lives here -- delegates to sku_ingestion.add_new_sku and
 ingestion_service.enqueue_new_sku, the same functions the CLI script uses, so the two
@@ -12,16 +14,18 @@ entrypoints can never drift in behavior.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.api.deps import get_db
+from src.api.deps import get_db, get_llm_client
 from src.api.schemas import NewSkuRequest, NewSkuResult, SkuDetail, SkuOut
-from src.db.models import InventoryCurrent, Sku
-from src.queue import ingestion_service
+from src.db.models import InventoryCurrent, PipelineRun, Sku
+from src.llm import explainer_service
+from src.llm.client import OpenRouterClient
+from src.queue import ingestion_service, queue_repository
 from src.queue.models import OrderQueue
 from src.repository.sku_ingestion import RAW_FEATURE_COLUMNS, add_new_sku
 
@@ -59,6 +63,7 @@ def get_sku(sku_id: str, session: Session = Depends(get_db)) -> dict:
 def create_sku(
     body: NewSkuRequest,
     session: Session = Depends(get_db),
+    client: OpenRouterClient = Depends(get_llm_client),
 ) -> dict:
     try:
         add_new_sku(
@@ -78,11 +83,21 @@ def create_sku(
         raise HTTPException(status_code=400, detail=f"sku created but enqueue failed: {exc}")
 
     run_id = None
+    explanation = None
     if body.run_now:
         from src.orchestrator.executor import LangGraphExecutor
         from src.repository.pipeline_service import run_pipeline_for_sku
 
         run_id = run_pipeline_for_sku(session, body.sku_id, LangGraphExecutor())
+        # Same bookkeeping POST /queue/{sku_id}/run does -- without this, the queue
+        # row would show a real run_id existing in pipeline_runs but order_queue's
+        # own last_run_id/last_evaluated_at would stay null forever, same bug that
+        # was already fixed there.
+        queue_repository.mark_evaluated(session, body.sku_id, run_id, datetime.now(timezone.utc))
+
+        run = session.get(PipelineRun, run_id)
+        if run is not None and run.status == "success":
+            explanation = explainer_service.explain(session, client, run_id, agent_name=None)
 
     queued = session.get(OrderQueue, body.sku_id)
-    return {"sku_id": body.sku_id, "queued": queued, "run_id": run_id}
+    return {"sku_id": body.sku_id, "queued": queued, "run_id": run_id, "explanation": explanation}

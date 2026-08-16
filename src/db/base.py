@@ -8,10 +8,17 @@ Design (see .CLAUDE/database_spec.md §1, §2/step-2):
   SQLite does not enforce foreign keys by default and the setting is per-connection —
   omitting this would silently disable every FK in the schema.
 - ``PRAGMA journal_mode=WAL`` for better concurrent-read behaviour in the desktop app.
+
+``APP_DB_PATH`` env var overrides the DB file path -- unset in normal use (app,
+scripts, uvicorn all get ``data/app.db``), set only by ``tests/conftest.py`` to
+point the entire test suite at an isolated copy (``data/test.db``) instead, so
+running the app for real never corrupts a test's "this table starts empty"
+assumptions and vice versa.
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from sqlalchemy import create_engine, event
@@ -23,7 +30,13 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
 
 DATA_DIR: Path = PROJECT_ROOT / "data"
-DB_PATH: Path = DATA_DIR / "app.db"
+
+_db_path_override = os.environ.get("APP_DB_PATH")
+if _db_path_override:
+    _override_path = Path(_db_path_override)
+    DB_PATH: Path = _override_path if _override_path.is_absolute() else PROJECT_ROOT / _override_path
+else:
+    DB_PATH = DATA_DIR / "app.db"
 
 # Create data/ if missing so the engine can open the file.
 DATA_DIR.mkdir(parents=True, exist_ok=True)
